@@ -117,7 +117,8 @@ object JsonSchemaConfig {
               useMultipleEditorSelectViaProperty:Boolean,
               uniqueItemClasses:java.util.Set[Class[_]],
               classTypeReMapping:java.util.Map[Class[_], Class[_]],
-              jsonSuppliers:java.util.Map[String, Supplier[JsonNode]]
+              jsonSuppliers:java.util.Map[String, Supplier[JsonNode]],
+              persistModels:Boolean
             ):JsonSchemaConfig = {
 
     import scala.collection.JavaConverters._
@@ -136,7 +137,8 @@ object JsonSchemaConfig {
       useMultipleEditorSelectViaProperty,
       uniqueItemClasses.asScala.toSet,
       classTypeReMapping.asScala.toMap,
-      jsonSuppliers.asScala.toMap
+      jsonSuppliers.asScala.toMap,
+      persistModels
     )
   }
 
@@ -230,8 +232,9 @@ case class JsonSchemaConfig
   uniqueItemClasses:Set[Class[_]], // If rendering array and type is instanceOf class in this set, then we add 'uniqueItems": true' to schema - See // https://github.com/jdorn/json-editor for more info
   classTypeReMapping:Map[Class[_], Class[_]], // Can be used to prevent rendering using polymorphism for specific classes.
   jsonSuppliers:Map[String, Supplier[JsonNode]], // Suppliers in this map can be accessed using @JsonSchemaInject(jsonSupplierViaLookup = "lookupKey")
+  persistModels:Boolean = false, // Whether or not to persist seen models between calls to `generateJsonSchema`
   subclassesResolver:SubclassesResolver = new SubclassesResolverImpl(), // Using default impl that scans entire classpath
-  failOnUnknownProperties:Boolean = true
+  failOnUnknownProperties:Boolean = true // Must match with the corresponding ObjectMapper setting!
 ) {
 
   def withFailOnUnknownProperties(failOnUnknownProperties:Boolean):JsonSchemaConfig = {
@@ -267,6 +270,11 @@ class JsonSchemaGenerator
   import scala.collection.JavaConverters._
 
   val log = LoggerFactory.getLogger(getClass)
+
+  // Whether or not to persist seen models between calls to `generateJsonSchema`. Currently, this is default true when object is constructed from Java, false from scala.
+  // This is totally not a good way to do things, but it means I don't need to update HSMP to be backwards compatible with a constructor change here, nor fix a ton of
+  // failing tests. If we ever decide to contribute back to open source, we will need to add the Java API option.
+  var globalRefTracker: Map[Class[_], String] = Map[Class[_], String]()
 
   val dateFormatMapping = Map[String,String](
     // Java7 dates
@@ -310,8 +318,9 @@ class JsonSchemaGenerator
   case class DefinitionInfo(ref:Option[String], jsonObjectFormatVisitor: Option[JsonObjectFormatVisitor])
 
   // Class that manages creating new definitions or getting $refs to existing definitions
-  class DefinitionsHandler() {
-    private var class2Ref = Map[Class[_], String]()
+  class DefinitionsHandler(refTracker:Option[Map[Class[_], String]]) {
+    private var class2Ref = if (refTracker.isDefined) refTracker.get else Map[Class[_], String]()
+    private var modelsCreated = false
     private val definitionsNode = JsonNodeFactory.instance.objectNode()
 
 
@@ -364,6 +373,7 @@ class JsonSchemaGenerator
             longRef = "#/definitions/"+clazz.getSimpleName + "_" + retryCount
           }
           class2Ref = class2Ref + (clazz -> longRef)
+          modelsCreated = true
 
           // create definition
           val node = JsonNodeFactory.instance.objectNode()
@@ -382,9 +392,12 @@ class JsonSchemaGenerator
     }
 
     def getFinalDefinitionsNode():Option[ObjectNode] = {
-      if (class2Ref.isEmpty) None else Some(definitionsNode)
+      if (!modelsCreated) None else Some(definitionsNode)
     }
 
+    def getFinalClass2Ref():Map[Class[_], String] = {
+      class2Ref
+    }
   }
 
   class MyJsonFormatVisitorWrapper
@@ -450,29 +463,29 @@ class JsonSchemaGenerator
 
           // Look for a @Size annotation, which should have a set of min/max properties.
           Option(p.getAnnotation(classOf[Size]))
-              .map {
-                size =>
-                  (size.min(), size.max()) match {
-                    case (0, max)                 => MinAndMaxLength(None, Some(max))
-                    case (min, Integer.MAX_VALUE) => MinAndMaxLength(Some(min), None)
-                    case (min, max)               => MinAndMaxLength(Some(min), Some(max))
-                  }
-              }
+            .map {
+              size =>
+                (size.min(), size.max()) match {
+                  case (0, max)                 => MinAndMaxLength(None, Some(max))
+                  case (min, Integer.MAX_VALUE) => MinAndMaxLength(Some(min), None)
+                  case (min, max)               => MinAndMaxLength(Some(min), Some(max))
+                }
+            }
             // Look for other annotations that don't have an explicit size, but we can infer the need to set a size for.
             .orElse {
-              // If we're annotated with @NotNull, check to see if our config requires a size property to be generated.
-              if (config.useMinLengthForNotNull && (p.getAnnotation(classOf[NotNull]) != null)) {
-                Option(MinAndMaxLength(Some(1), None))
-              }
-              // Other javax.validation annotations that require a length.
-              else if (p.getAnnotation(classOf[NotBlank]) != null || p.getAnnotation(classOf[NotEmpty]) != null) {
-                Option(MinAndMaxLength(Some(1), None))
-              }
-              // No length required.
-              else {
-                None
-              }
+            // If we're annotated with @NotNull, check to see if our config requires a size property to be generated.
+            if (config.useMinLengthForNotNull && (p.getAnnotation(classOf[NotNull]) != null)) {
+              Option(MinAndMaxLength(Some(1), None))
             }
+            // Other javax.validation annotations that require a length.
+            else if (p.getAnnotation(classOf[NotBlank]) != null || p.getAnnotation(classOf[NotEmpty]) != null) {
+              Option(MinAndMaxLength(Some(1), None))
+            }
+            // No length required.
+            else {
+              None
+            }
+          }
       }
 
       minAndMaxLength.map {
@@ -995,11 +1008,11 @@ class JsonSchemaGenerator
 
                   // Figure out if the type is considered optional by either Java or Scala.
                   val optionalType:Boolean = classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) ||
-                                             classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass)
+                    classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass)
 
                   // If the property is not required, and our configuration allows it, let's go ahead and mark the type as nullable.
                   if (!requiredProperty && ((config.useOneOfForOption && optionalType) ||
-                                            (config.useOneOfForNullables && !optionalType))) {
+                    (config.useOneOfForNullables && !optionalType))) {
                     // We support this type being null, insert a oneOf consisting of a sentinel "null" and the real type.
                     val oneOfArray = JsonNodeFactory.instance.arrayNode()
                     thisPropertyNode.set("oneOf", oneOfArray)
@@ -1310,29 +1323,39 @@ class JsonSchemaGenerator
     }.map {
       title =>
         rootNode.put("title", title)
-        // If root class is annotated with @JsonSchemaTitle, it will later override this title
+      // If root class is annotated with @JsonSchemaTitle, it will later override this title
     }
 
     // Maybe set schema description
     description.map {
       d =>
         rootNode.put("description", d)
-        // If root class is annotated with @JsonSchemaDescription, it will later override this description
+      // If root class is annotated with @JsonSchemaDescription, it will later override this description
     }
 
-
-    val definitionsHandler = new DefinitionsHandler
-    val rootVisitor = new MyJsonFormatVisitorWrapper(rootObjectMapper, node = rootNode, definitionsHandler = definitionsHandler, currentProperty = None)
-
+    val handlerToUse = if (config.persistModels) new DefinitionsHandler(Some(globalRefTracker)) else new DefinitionsHandler(None)
+    val rootVisitor = new MyJsonFormatVisitorWrapper(rootObjectMapper, node = rootNode, definitionsHandler = handlerToUse, currentProperty = None)
 
     rootObjectMapper.acceptJsonFormatVisitor(javaType, rootVisitor)
 
-    definitionsHandler.getFinalDefinitionsNode().foreach {
+    handlerToUse.getFinalDefinitionsNode().foreach {
       definitionsNode => rootNode.set("definitions", definitionsNode)
     }
 
-    rootNode
+    globalRefTracker = handlerToUse.getFinalClass2Ref()
 
+    rootNode
+  }
+
+  def clearSavedDefinitions(): Unit = {
+    // Clear saved definitions
+    globalRefTracker = Map[Class[_], String]()
+  }
+
+  // Another janky workaround for HSMP. The JsonSchemaGenerator recursively resolves all submodels and returns a nested JsonNode. However, this loses all the class/type
+  // information. We need to know the Java type of all models encountered here in the HSMP, thus have this method to do so.
+  def getSavedDefinitions: util.Map[Class[_], String] = {
+    globalRefTracker.asJava
   }
 
   implicit class JsonNodeExtension(o:JsonNode) {
