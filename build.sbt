@@ -27,6 +27,14 @@ lazy val commonSettings = Seq(
       "scm:git@github.com:zrrobbins/mbknor-jackson-jsonSchema.git"
     )
   ),
+  developers := List(
+    Developer(
+      id    = "mbknor",
+      name  = "Morten Kjetland",
+      email = "example@example.com",
+      url   = url("https://github.com/mbknor")
+    )
+  ),
   compileOrder in Test := CompileOrder.Mixed,
   javacOptions ++= Seq("-source", "1.8", "-target", "1.8"),
   scalacOptions ++= Seq("-unchecked", "-deprecation"),
