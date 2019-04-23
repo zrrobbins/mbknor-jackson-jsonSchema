@@ -2,21 +2,21 @@ import ReleaseTransformations._
 import sbtrelease.ReleasePlugin.autoImport.releaseStepCommand
 
 lazy val commonSettings = Seq(
-  organization := "com.zrrobbins",
+  organization := "com.github.zrrobbins",
   scalaVersion := "2.12.4",
   crossScalaVersions := Seq("2.10.7", "2.11.12", "2.12.8", "2.13.0-M4"),
   publishMavenStyle := true,
   publishArtifact in Test := false,
   pomIncludeRepository := { _ => false },
   useGpg := true,
-  publishTo := Some(Resolver.file("file",  new File(Path.userHome.absolutePath+"/.m2/repository"))),
-    //  publishTo := {
-//    val nexus = "https://oss.sonatype.org/"
-//    if (isSnapshot.value)
-//      Some("snapshots" at nexus + "content/repositories/snapshots")
-//    else
-//      Some("releases" at nexus + "service/local/staging/deploy/maven2")
-//  },
+  //publishTo := Some(Resolver.file("file",  new File(Path.userHome.absolutePath+"/.m2/repository"))), // For local testing
+  publishTo := {
+    val nexus = "https://oss.sonatype.org/"
+    if (isSnapshot.value)
+      Some("snapshots" at nexus + "content/repositories/snapshots")
+    else
+      Some("releases" at nexus + "service/local/staging/deploy/maven2")
+  },
   credentials += Credentials(Path.userHome / ".ivy2" / ".credentials_sonatype"),
   homepage := Some(url("https://github.com/zrrobbins/mbknor-jackson-jsonSchema")),
   licenses := Seq("MIT" -> url("https://github.com/zrrobbins/mbknor-jackson-jsonSchema/blob/master/LICENSE.txt")),
@@ -27,11 +27,6 @@ lazy val commonSettings = Seq(
       "scm:git@github.com:zrrobbins/mbknor-jackson-jsonSchema.git"
     )
   ),
-//  pomExtra := (
-//      <scm>
-//        <url>git@github.com:zrrobbins/mbknor-jackson-jsonSchema.git</url>
-//        <connection>scm:git:git@github.com:zrrobbins/mbknor-jackson-jsonSchema.git</connection>
-//      </scm>),
   compileOrder in Test := CompileOrder.Mixed,
   javacOptions ++= Seq("-source", "1.8", "-target", "1.8"),
   scalacOptions ++= Seq("-unchecked", "-deprecation"),
