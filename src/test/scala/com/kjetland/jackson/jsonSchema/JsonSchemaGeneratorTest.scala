@@ -23,11 +23,12 @@ import com.kjetland.jackson.jsonSchema.testData.polymorphism4.{Child41, Child42}
 import com.kjetland.jackson.jsonSchema.testData.polymorphism5.{Child51, Child52, Parent5}
 import com.kjetland.jackson.jsonSchema.testDataScala._
 import com.kjetland.jackson.jsonSchema.testData_issue_24.EntityWrapper
-import org.scalatest.{FunSuite, Matchers}
+import io.github.classgraph.ClassGraph
+import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
 
 import scala.collection.JavaConverters._
 
-class JsonSchemaGeneratorTest extends FunSuite with Matchers {
+class JsonSchemaGeneratorTest extends FunSuite with Matchers with BeforeAndAfter {
 
   val _objectMapper = new ObjectMapper()
   val _objectMapperScala = new ObjectMapper()
@@ -55,7 +56,7 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
 
 
 
-  val jsonSchemaGenerator = new JsonSchemaGenerator(_objectMapper, debug = true)
+  var jsonSchemaGenerator : JsonSchemaGenerator = _
   val jsonSchemaGeneratorHTML5 = new JsonSchemaGenerator(_objectMapper, debug = true, config = JsonSchemaConfig.html5EnabledSchema)
   val jsonSchemaGeneratorScala = new JsonSchemaGenerator(_objectMapperScala, debug = true)
   val jsonSchemaGeneratorScalaHTML5 = new JsonSchemaGenerator(_objectMapperScala, debug = true, config = JsonSchemaConfig.html5EnabledSchema)
@@ -65,16 +66,19 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
 
   val jsonSchemaGeneratorNullable = new JsonSchemaGenerator(_objectMapper, debug = true, config = JsonSchemaConfig.nullableJsonSchemaDraft4)
   val jsonSchemaGeneratorHTML5Nullable = new JsonSchemaGenerator(_objectMapper, debug = true,
-                                                                 config = JsonSchemaConfig.html5EnabledSchema.copy(useOneOfForNullables = true))
+    config = JsonSchemaConfig.html5EnabledSchema.copy(useOneOfForNullables = true))
   val jsonSchemaGeneratorWithIdsNullable = new JsonSchemaGenerator(_objectMapperScala, debug = true,
-                                                                   vanillaJsonSchemaDraft4WithIds.copy(useOneOfForNullables = true))
+    vanillaJsonSchemaDraft4WithIds.copy(useOneOfForNullables = true))
 
   val testData = new TestData{}
+
+  before {
+    jsonSchemaGenerator = new JsonSchemaGenerator(_objectMapper, debug = true)
+  }
 
   def asPrettyJson(node:JsonNode, om:ObjectMapper):String = {
     om.writerWithDefaultPrettyPrinter().writeValueAsString(node)
   }
-
 
   // Asserts that we're able to go from object => json => equal object
   def assertToFromJson(g:JsonSchemaGenerator, o:Any): JsonNode = {
