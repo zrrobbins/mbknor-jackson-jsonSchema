@@ -988,10 +988,18 @@ class JsonSchemaGenerator
                 // Need to check for Option/Optional-special-case before we know what node to use here.
                 case class PropertyNode(main:ObjectNode, meta:ObjectNode)
 
+                // Figure out if the type is considered optional by either Java or Scala.
+                val optionalType:Boolean = classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) ||
+                  classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass)
+
+                // Figure out if the type is a collection type
+                val collectionType:Boolean = classOf[util.Collection[_]].isAssignableFrom(propertyType.getRawClass);
+
                 // Check if we should set this property as required. Primitive types MUST have a value, as does anything
                 // with a @JsonProperty that has "required" set to true. Lastly, various javax.validation annotations also
                 // make this required.
-                val requiredProperty:Boolean = if (propertyType.getRawClass.isPrimitive || jsonPropertyRequired || validationAnnotationRequired(prop)) {
+                val requiredProperty:Boolean = if ((!optionalType && !collectionType)
+                  && (propertyType.getRawClass.isPrimitive || jsonPropertyRequired || validationAnnotationRequired(prop))) {
                   true
                 } else {
                   false
@@ -1005,10 +1013,6 @@ class JsonSchemaGenerator
                     thisPropertyNode.put("propertyOrder", nextPropertyOrderIndex)
                     nextPropertyOrderIndex = nextPropertyOrderIndex + 1
                   }
-
-                  // Figure out if the type is considered optional by either Java or Scala.
-                  val optionalType:Boolean = classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) ||
-                    classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass)
 
                   // If the property is not required, and our configuration allows it, let's go ahead and mark the type as nullable.
                   if (!requiredProperty && ((config.useOneOfForOption && optionalType) ||
