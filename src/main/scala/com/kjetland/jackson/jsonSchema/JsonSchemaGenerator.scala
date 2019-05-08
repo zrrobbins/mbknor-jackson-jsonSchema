@@ -988,22 +988,21 @@ class JsonSchemaGenerator
                 // Need to check for Option/Optional-special-case before we know what node to use here.
                 case class PropertyNode(main:ObjectNode, meta:ObjectNode)
 
+                // Look for @JsonSchemaProperty annotation, which allows overriding `required`
+                val jsonSchemaRequired:Option[Boolean] = prop
+                  .flatMap(p => Option(p.getAnnotation(classOf[JsonSchemaProperty])))
+                  .map(_.required())
+
                 // Figure out if the type is considered optional by either Java or Scala.
                 val optionalType:Boolean = classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) ||
-                  classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass)
+                  classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass) ||
+                  classOf[com.google.common.base.Optional[_]].isAssignableFrom(propertyType.getRawClass)
 
-                // Figure out if the type is a collection type
-                val collectionType:Boolean = classOf[util.Collection[_]].isAssignableFrom(propertyType.getRawClass);
-
-                // Check if we should set this property as required. Primitive types MUST have a value, as does anything
-                // with a @JsonProperty that has "required" set to true. Lastly, various javax.validation annotations also
-                // make this required.
-                val requiredProperty:Boolean = if ((!optionalType && !collectionType)
-                  && (propertyType.getRawClass.isPrimitive || jsonPropertyRequired || validationAnnotationRequired(prop))) {
-                  true
-                } else {
-                  false
-                }
+                // Check if we should set this property as required. Anything with a @JsonProperty that
+                // has "required" set to true, various javax.validation annotations, or any property
+                // that is NOT an Optional type is set as required by default. The @JsonSchemaProperty
+                // annotation can be used to override any of these conditions.
+                val requiredProperty:Boolean = jsonSchemaRequired.getOrElse(jsonPropertyRequired || validationAnnotationRequired(prop) || !optionalType)
 
                 val thisPropertyNode:PropertyNode = {
                   val thisPropertyNode = JsonNodeFactory.instance.objectNode()
