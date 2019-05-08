@@ -1,11 +1,12 @@
 package com.kjetland.jackson.jsonSchema.testData;
 
+import java.time.OffsetDateTime;
+
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaDescription;
 import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaFormat;
+import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaProperty;
 import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaTitle;
-
-import java.time.OffsetDateTime;
 
 @JsonSchemaFormat("grid")
 @JsonSchemaDescription("This is our pojo")
@@ -20,6 +21,9 @@ public class PojoUsingFormat {
     @JsonSchemaFormat("checkbox")
     public Boolean choice;
 
+    @JsonSchemaProperty(required = false)
+    public String aNonRequiredString;
+
     @JsonPropertyDescription("This is description from @JsonPropertyDescription")
     public OffsetDateTime dateTime;
 
@@ -29,9 +33,10 @@ public class PojoUsingFormat {
     private PojoUsingFormat() {
     }
 
-    public PojoUsingFormat(String emailValue, Boolean choice, OffsetDateTime dateTime, OffsetDateTime dateTimeWithAnnotation) {
+    public PojoUsingFormat(String emailValue, Boolean choice, String aNonRequiredString, OffsetDateTime dateTime, OffsetDateTime dateTimeWithAnnotation) {
         this.emailValue = emailValue;
         this.choice = choice;
+        this.aNonRequiredString = aNonRequiredString;
         this.dateTime = dateTime;
         this.dateTimeWithAnnotation = dateTimeWithAnnotation;
     }
@@ -45,6 +50,7 @@ public class PojoUsingFormat {
 
         if (emailValue != null ? !emailValue.equals(that.emailValue) : that.emailValue != null) return false;
         if (choice != null ? !choice.equals(that.choice) : that.choice != null) return false;
+        if (aNonRequiredString != null ? !aNonRequiredString.equals(that.aNonRequiredString) : that.aNonRequiredString != null) return false;
         if (dateTime != null ? !dateTime.equals(that.dateTime) : that.dateTime != null) return false;
         return dateTimeWithAnnotation != null ? dateTimeWithAnnotation.equals(that.dateTimeWithAnnotation) : that.dateTimeWithAnnotation == null;
 
@@ -54,6 +60,7 @@ public class PojoUsingFormat {
     public int hashCode() {
         int result = emailValue != null ? emailValue.hashCode() : 0;
         result = 31 * result + (choice != null ? choice.hashCode() : 0);
+        result = 31 * result + (aNonRequiredString != null ? aNonRequiredString.hashCode() : 0);
         result = 31 * result + (dateTime != null ? dateTime.hashCode() : 0);
         result = 31 * result + (dateTimeWithAnnotation != null ? dateTimeWithAnnotation.hashCode() : 0);
         return result;
@@ -64,6 +71,7 @@ public class PojoUsingFormat {
         return "PojoUsingFormat{" +
                 "emailValue='" + emailValue + '\'' +
                 ", choice=" + choice +
+                ", aNonRequiredString=" + aNonRequiredString +
                 ", dateTime=" + dateTime +
                 ", dateTimeWithAnnotation=" + dateTimeWithAnnotation +
                 '}';
