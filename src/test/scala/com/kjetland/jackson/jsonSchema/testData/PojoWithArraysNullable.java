@@ -1,27 +1,37 @@
 package com.kjetland.jackson.jsonSchema.testData;
 
-import com.kjetland.jackson.jsonSchema.testData.polymorphism1.Parent;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
+import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaProperty;
+import com.kjetland.jackson.jsonSchema.testData.polymorphism1.Parent;
+
 public class PojoWithArraysNullable {
 
     // It was difficult to construct this from scala :)
+    @JsonSchemaProperty(required = false)
     public static List<List<String>> _listOfListOfStringsValues = Arrays.asList(Arrays.asList("1","2"), Arrays.asList("3"));
 
+    @JsonSchemaProperty(required = false)
     public int[] intArray1;
+    @JsonSchemaProperty(required = false)
     public String[] stringArray;
 
+    @JsonSchemaProperty(required = false)
     public List<String> stringList;
 
+    @JsonSchemaProperty(required = false)
     public List<Parent> polymorphismList;
+    @JsonSchemaProperty(required = false)
     public Parent[] polymorphismArray;
+    @JsonSchemaProperty(required = false)
     public List<ClassNotExtendingAnything> regularObjectList;
 
+    @JsonSchemaProperty(required = false)
     public List<List<String>> listOfListOfStrings;
 
+    @JsonSchemaProperty(required = false)
     public Set<MyEnum> setOfUniqueValues;
 
     public PojoWithArraysNullable() {

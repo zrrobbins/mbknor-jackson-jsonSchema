@@ -2,8 +2,12 @@ package com.kjetland.jackson.jsonSchema.testData;
 
 import javax.validation.constraints.NotNull;
 
+import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaProperty;
+
 public class ManyPrimitives {
     public String _string;
+    @JsonSchemaProperty(required = false)
+    public String _notRequiredString;
     public Integer _integer;
     public int _int;
     public Boolean _booleanObject;
@@ -18,8 +22,9 @@ public class ManyPrimitives {
     public ManyPrimitives() {
     }
 
-    public ManyPrimitives(String _string, Integer _integer, int _int, Boolean _booleanObject, boolean _booleanPrimitive, Boolean _booleanObjectWithNotNull, Double _doubleObject, double _doublePrimitive, MyEnum myEnum) {
+    public ManyPrimitives(String _string, String _notRequiredString, Integer _integer, int _int, Boolean _booleanObject, boolean _booleanPrimitive, Boolean _booleanObjectWithNotNull, Double _doubleObject, double _doublePrimitive, MyEnum myEnum) {
         this._string = _string;
+        this._notRequiredString = _notRequiredString;
         this._integer = _integer;
         this._int = _int;
         this._booleanObject = _booleanObject;
@@ -41,6 +46,7 @@ public class ManyPrimitives {
         if (_booleanPrimitive != that._booleanPrimitive) return false;
         if (Double.compare(that._doublePrimitive, _doublePrimitive) != 0) return false;
         if (_string != null ? !_string.equals(that._string) : that._string != null) return false;
+        if (_notRequiredString != null ? !_notRequiredString.equals(that._notRequiredString) : that._notRequiredString != null) return false;
         if (_integer != null ? !_integer.equals(that._integer) : that._integer != null) return false;
         if (_booleanObject != null ? !_booleanObject.equals(that._booleanObject) : that._booleanObject != null) return false;
         if (_booleanObjectWithNotNull != null ? !_booleanObjectWithNotNull.equals(that._booleanObjectWithNotNull) : that._booleanObjectWithNotNull != null) return false;
@@ -54,6 +60,7 @@ public class ManyPrimitives {
         int result;
         long temp;
         result = _string != null ? _string.hashCode() : 0;
+        result = 31 * result + (_notRequiredString != null ? _notRequiredString.hashCode() : 0);
         result = 31 * result + (_integer != null ? _integer.hashCode() : 0);
         result = 31 * result + _int;
         result = 31 * result + (_booleanObject != null ? _booleanObject.hashCode() : 0);
