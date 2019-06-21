@@ -216,6 +216,23 @@ case class SubclassesResolverImpl
   }
 }
 
+/**
+  * Used to determine if a model is part of the given project, for annotating models and certain properties w/ an external-models vendor extension.
+  */
+trait ExternalModelChecker {
+  def alwaysIncludeVendorExtension():Boolean
+  def isExternalModel(clazz:Class[_]):Boolean
+}
+
+class DefaultExternalModelsChecker extends ExternalModelChecker {
+  override def alwaysIncludeVendorExtension(): Boolean = {
+    false
+  }
+  override def isExternalModel(clazz:Class[_]):Boolean = {
+    false
+  }
+}
+
 case class JsonSchemaConfig
 (
   autoGenerateTitleForProperties:Boolean,
@@ -234,6 +251,7 @@ case class JsonSchemaConfig
   jsonSuppliers:Map[String, Supplier[JsonNode]], // Suppliers in this map can be accessed using @JsonSchemaInject(jsonSupplierViaLookup = "lookupKey")
   persistModels:Boolean = false, // Whether or not to persist seen models between calls to `generateJsonSchema`
   subclassesResolver:SubclassesResolver = new SubclassesResolverImpl(), // Using default impl that scans entire classpath
+  externalModelChecker:ExternalModelChecker = new DefaultExternalModelsChecker(), // Optionally can be included to annotate models + props with the external model vendor extension. By default, is off
   failOnUnknownProperties:Boolean = true // Must match with the corresponding ObjectMapper setting!
 ) {
 
@@ -243,6 +261,10 @@ case class JsonSchemaConfig
 
   def withSubclassesResolver(subclassesResolver: SubclassesResolver):JsonSchemaConfig = {
     this.copy( subclassesResolver = subclassesResolver )
+  }
+
+  def withExternalModelChecker(externalModelChecker: ExternalModelChecker):JsonSchemaConfig = {
+    this.copy( externalModelChecker = externalModelChecker )
   }
 }
 
@@ -312,6 +334,11 @@ class JsonSchemaGenerator
 
   private def setFormat(node:ObjectNode, format:String): Unit = {
     node.put("format", format)
+  }
+
+  private def markAsExternal(node:ObjectNode, clazz:Class[_]): Unit = {
+    val isExternal = config.externalModelChecker.isExternalModel(clazz)
+    node.put("isExternalModel", isExternal)
   }
 
 
@@ -492,6 +519,10 @@ class JsonSchemaGenerator
         minAndMax:MinAndMaxLength =>
           minAndMax.minLength.map( length => node.put("minLength", length) )
           minAndMax.maxLength.map( length => node.put("maxLength", length) )
+      }
+
+      if (_type != null && _type.isEnumType) {
+        markAsExternal(node, _type.getRawClass)
       }
 
       new JsonStringFormatVisitor with EnumSupport {
@@ -1045,9 +1076,12 @@ class JsonSchemaGenerator
                 // Push current work in progress since we're about to start working on a new class
                 definitionsHandler.pushWorkInProgress()
 
-                if( (classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) || classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass) ) && propertyType.containedTypeCount() >= 1) {
+                if((classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) ||
+                  classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass) ||
+                  classOf[com.google.common.base.Optional[_]].isAssignableFrom(propertyType.getRawClass))
+                  && propertyType.containedTypeCount() >= 1) {
 
-                  // Property is scala Option or Java Optional.
+                  // Property is scala Option or Java/Guava Optional.
                   //
                   // Due to Java's Type Erasure, the type behind Option is lost.
                   // To workaround this, we use the same workaround as jackson-scala-module described here:
