@@ -217,20 +217,30 @@ case class SubclassesResolverImpl
 }
 
 /**
-  * Used to determine if a model is part of the given project, for annotating models and certain properties w/ an external-models vendor extension.
+  * Used to do additional manipulations on a model/property schema. Clients can implement this interface to manipulate
+  * the generated schemas as they see fit.
   */
-trait ExternalModelChecker {
-  def alwaysIncludeVendorExtension():Boolean
-  def isExternalModel(clazz:Class[_]):Boolean
+trait SchemaExtension {
+
+  /**
+    * Given a property's schema node and the class of the property, modify the schema node.
+    * This is currently only called on String properties!
+    * @param node - the schema of the property
+    * @param clazz - the class of the property
+    */
+  def modifyProperty(node:ObjectNode, clazz:Class[_]):Unit
+
+  /**
+    * Given a model's schema node and the class of the model, modify the schema node.
+    * @param node - the schema of the model
+    * @param clazz - the class of the model
+    */
+  def modifyModel(node:ObjectNode, clazz:Class[_]):Unit
 }
 
-class DefaultExternalModelsChecker extends ExternalModelChecker {
-  override def alwaysIncludeVendorExtension(): Boolean = {
-    false
-  }
-  override def isExternalModel(clazz:Class[_]):Boolean = {
-    false
-  }
+class DefaultSchemaExtension extends SchemaExtension {
+  override def modifyProperty(node: ObjectNode, clazz: Class[_]): Unit = {}
+  override def modifyModel(node: ObjectNode, clazz: Class[_]): Unit = {}
 }
 
 case class JsonSchemaConfig
@@ -251,7 +261,7 @@ case class JsonSchemaConfig
   jsonSuppliers:Map[String, Supplier[JsonNode]], // Suppliers in this map can be accessed using @JsonSchemaInject(jsonSupplierViaLookup = "lookupKey")
   persistModels:Boolean = false, // Whether or not to persist seen models between calls to `generateJsonSchema`
   subclassesResolver:SubclassesResolver = new SubclassesResolverImpl(), // Using default impl that scans entire classpath
-  externalModelChecker:ExternalModelChecker = new DefaultExternalModelsChecker(), // Optionally can be included to annotate models + props with the external model vendor extension. By default, is off
+  schemaExtension:SchemaExtension = new DefaultSchemaExtension(), // Optionally can be included for arbitrary manipulation of generated schemas, off by default
   failOnUnknownProperties:Boolean = true // Must match with the corresponding ObjectMapper setting!
 ) {
 
@@ -263,8 +273,8 @@ case class JsonSchemaConfig
     this.copy( subclassesResolver = subclassesResolver )
   }
 
-  def withExternalModelChecker(externalModelChecker: ExternalModelChecker):JsonSchemaConfig = {
-    this.copy( externalModelChecker = externalModelChecker )
+  def withSchemaExtension(schemaExtension: SchemaExtension):JsonSchemaConfig = {
+    this.copy( schemaExtension = schemaExtension )
   }
 }
 
@@ -336,12 +346,6 @@ class JsonSchemaGenerator
     node.put("format", format)
   }
 
-  private def markAsExternal(node:ObjectNode, clazz:Class[_]): Unit = {
-    val isExternal = config.externalModelChecker.isExternalModel(clazz)
-    node.put("isExternalModel", isExternal)
-  }
-
-
   case class DefinitionInfo(ref:Option[String], jsonObjectFormatVisitor: Option[JsonObjectFormatVisitor])
 
   // Class that manages creating new definitions or getting $refs to existing definitions
@@ -411,6 +415,8 @@ class JsonSchemaGenerator
           definitionsNode.set(shortRef, node)
 
           val jsonObjectFormatVisitor = objectDefinitionBuilder.apply(node)
+
+          config.schemaExtension.modifyModel(node, clazz)
 
           workInProgress = None
 
@@ -521,8 +527,8 @@ class JsonSchemaGenerator
           minAndMax.maxLength.map( length => node.put("maxLength", length) )
       }
 
-      if (_type != null && _type.isEnumType) {
-        markAsExternal(node, _type.getRawClass)
+      if (_type != null) {
+        config.schemaExtension.modifyProperty(node, _type.getRawClass)
       }
 
       new JsonStringFormatVisitor with EnumSupport {
@@ -1377,6 +1383,10 @@ class JsonSchemaGenerator
 
     handlerToUse.getFinalDefinitionsNode().foreach {
       definitionsNode => rootNode.set("definitions", definitionsNode)
+    }
+
+    if (javaType != null) {
+      config.schemaExtension.modifyModel(rootNode, javaType.getRawClass)
     }
 
     globalRefTracker = handlerToUse.getFinalClass2Ref()
