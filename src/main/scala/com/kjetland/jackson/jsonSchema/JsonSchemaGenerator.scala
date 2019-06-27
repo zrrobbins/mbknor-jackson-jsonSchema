@@ -216,6 +216,33 @@ case class SubclassesResolverImpl
   }
 }
 
+/**
+  * Used to do additional manipulations on a model/property schema. Clients can implement this interface to manipulate
+  * the generated schemas as they see fit.
+  */
+trait SchemaExtension {
+
+  /**
+    * Given a property's schema node and the class of the property, modify the schema node.
+    * This is currently only called on String properties!
+    * @param node - the schema of the property
+    * @param clazz - the class of the property
+    */
+  def modifyProperty(node:ObjectNode, clazz:Class[_]):Unit
+
+  /**
+    * Given a model's schema node and the class of the model, modify the schema node.
+    * @param node - the schema of the model
+    * @param clazz - the class of the model
+    */
+  def modifyModel(node:ObjectNode, clazz:Class[_]):Unit
+}
+
+class DefaultSchemaExtension extends SchemaExtension {
+  override def modifyProperty(node: ObjectNode, clazz: Class[_]): Unit = {}
+  override def modifyModel(node: ObjectNode, clazz: Class[_]): Unit = {}
+}
+
 case class JsonSchemaConfig
 (
   autoGenerateTitleForProperties:Boolean,
@@ -234,6 +261,7 @@ case class JsonSchemaConfig
   jsonSuppliers:Map[String, Supplier[JsonNode]], // Suppliers in this map can be accessed using @JsonSchemaInject(jsonSupplierViaLookup = "lookupKey")
   persistModels:Boolean = false, // Whether or not to persist seen models between calls to `generateJsonSchema`
   subclassesResolver:SubclassesResolver = new SubclassesResolverImpl(), // Using default impl that scans entire classpath
+  schemaExtension:SchemaExtension = new DefaultSchemaExtension(), // Optionally can be included for arbitrary manipulation of generated schemas, off by default
   failOnUnknownProperties:Boolean = true // Must match with the corresponding ObjectMapper setting!
 ) {
 
@@ -243,6 +271,10 @@ case class JsonSchemaConfig
 
   def withSubclassesResolver(subclassesResolver: SubclassesResolver):JsonSchemaConfig = {
     this.copy( subclassesResolver = subclassesResolver )
+  }
+
+  def withSchemaExtension(schemaExtension: SchemaExtension):JsonSchemaConfig = {
+    this.copy( schemaExtension = schemaExtension )
   }
 }
 
@@ -314,7 +346,6 @@ class JsonSchemaGenerator
     node.put("format", format)
   }
 
-
   case class DefinitionInfo(ref:Option[String], jsonObjectFormatVisitor: Option[JsonObjectFormatVisitor])
 
   // Class that manages creating new definitions or getting $refs to existing definitions
@@ -384,6 +415,8 @@ class JsonSchemaGenerator
           definitionsNode.set(shortRef, node)
 
           val jsonObjectFormatVisitor = objectDefinitionBuilder.apply(node)
+
+          config.schemaExtension.modifyModel(node, clazz)
 
           workInProgress = None
 
@@ -492,6 +525,10 @@ class JsonSchemaGenerator
         minAndMax:MinAndMaxLength =>
           minAndMax.minLength.map( length => node.put("minLength", length) )
           minAndMax.maxLength.map( length => node.put("maxLength", length) )
+      }
+
+      if (_type != null) {
+        config.schemaExtension.modifyProperty(node, _type.getRawClass)
       }
 
       new JsonStringFormatVisitor with EnumSupport {
@@ -1045,9 +1082,12 @@ class JsonSchemaGenerator
                 // Push current work in progress since we're about to start working on a new class
                 definitionsHandler.pushWorkInProgress()
 
-                if( (classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) || classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass) ) && propertyType.containedTypeCount() >= 1) {
+                if((classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) ||
+                  classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass) ||
+                  classOf[com.google.common.base.Optional[_]].isAssignableFrom(propertyType.getRawClass))
+                  && propertyType.containedTypeCount() >= 1) {
 
-                  // Property is scala Option or Java Optional.
+                  // Property is scala Option or Java/Guava Optional.
                   //
                   // Due to Java's Type Erasure, the type behind Option is lost.
                   // To workaround this, we use the same workaround as jackson-scala-module described here:
@@ -1343,6 +1383,10 @@ class JsonSchemaGenerator
 
     handlerToUse.getFinalDefinitionsNode().foreach {
       definitionsNode => rootNode.set("definitions", definitionsNode)
+    }
+
+    if (javaType != null) {
+      config.schemaExtension.modifyModel(rootNode, javaType.getRawClass)
     }
 
     globalRefTracker = handlerToUse.getFinalClass2Ref()
