@@ -584,7 +584,9 @@ class JsonSchemaGenerator
       new JsonArrayFormatVisitor with MySerializerProvider {
         override def itemsFormat(handler: JsonFormatVisitable, _elementType: JavaType): Unit = {
           l(s"expectArrayFormat - handler: $handler - elementType: ${_elementType} - preferredElementType: $preferredElementType")
-          objectMapper.acceptJsonFormatVisitor(tryToReMapType(preferredElementType), createChild(itemsNode, currentProperty = None))
+          // Some types have a preferredElementType of null, but a valid type hint passed in. In these cases, we fall back to the type hint.
+          val typeToUse:JavaType = Option.apply(preferredElementType).getOrElse(_elementType)
+          objectMapper.acceptJsonFormatVisitor(tryToReMapType(typeToUse), createChild(itemsNode, currentProperty = None))
         }
 
         override def itemsFormat(format: JsonFormatTypes): Unit = {
@@ -831,6 +833,9 @@ class JsonSchemaGenerator
     }
 
     def tryToReMapType(originalClass: Class[_]):Class[_] = {
+      if (originalClass == null) {
+        return originalClass
+      }
       config.classTypeReMapping.get(originalClass).map {
         mappedToClass:Class[_] =>
           l(s"Class $originalClass is remapped to $mappedToClass")
@@ -839,6 +844,9 @@ class JsonSchemaGenerator
     }
 
     private def tryToReMapType(originalType: JavaType):JavaType = {
+      if (originalType == null) {
+        return originalType
+      }
       val _type:JavaType = config.classTypeReMapping.get(originalType.getRawClass).map {
         mappedToClass:Class[_] =>
           l(s"Class ${originalType.getRawClass} is remapped to $mappedToClass")
