@@ -377,10 +377,10 @@ class JsonSchemaGenerator
 
     def getDefinitionName (t:JavaType):String = {
       var definitionName = getTypeName(t)
-      t.getBindings.getTypeParameters.forEach(binding => {
-        println(definitionName)
-        definitionName += getDefinitionName(binding)
-      })
+
+      t.getBindings.getTypeParameters.asScala
+        .foreach(definitionName += getDefinitionName(_))
+
       definitionName
     }
 
