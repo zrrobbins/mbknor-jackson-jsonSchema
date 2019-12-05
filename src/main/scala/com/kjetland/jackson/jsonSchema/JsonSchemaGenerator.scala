@@ -229,8 +229,9 @@ trait SchemaExtension {
     * This is currently only called on String properties!
     * @param node - the schema of the property
     * @param clazz - the class of the property
+    * @param beanProperty - the bean property
     */
-  def modifyProperty(node:ObjectNode, clazz:Class[_]):Unit
+  def modifyProperty(node:ObjectNode, clazz:Class[_], beanProperty:Optional[BeanProperty]):Unit
 
   /**
     * Given a model's schema node and the class of the model, modify the schema node.
@@ -241,7 +242,7 @@ trait SchemaExtension {
 }
 
 class DefaultSchemaExtension extends SchemaExtension {
-  override def modifyProperty(node: ObjectNode, clazz: Class[_]): Unit = {}
+  override def modifyProperty(node: ObjectNode, clazz: Class[_], beanProperty: Optional[BeanProperty]): Unit = {}
   override def modifyModel(node: ObjectNode, clazz: Class[_]): Unit = {}
 }
 
@@ -551,7 +552,7 @@ class JsonSchemaGenerator
       }
 
       if (_type != null) {
-        config.schemaExtension.modifyProperty(node, _type.getRawClass)
+        config.schemaExtension.modifyProperty(node, _type.getRawClass, Optional.ofNullable(currentProperty.orNull))
       }
 
       new JsonStringFormatVisitor with EnumSupport {
@@ -595,6 +596,9 @@ class JsonSchemaGenerator
           }
       }
 
+      if (_type != null) {
+        config.schemaExtension.modifyProperty(node, _type.getRawClass, Optional.ofNullable(currentProperty.orNull))
+      }
 
       val itemsNode = JsonNodeFactory.instance.objectNode()
       node.set("items", itemsNode)
@@ -654,6 +658,10 @@ class JsonSchemaGenerator
           }
       }
 
+      if (_type != null) {
+        config.schemaExtension.modifyProperty(node, _type.getRawClass, Optional.ofNullable(currentProperty.orNull))
+      }
+
       new JsonNumberFormatVisitor  with EnumSupport {
         val _node = node
         override def numberType(_type: NumberType): Unit = l(s"JsonNumberFormatVisitor.numberType: ${_type}")
@@ -704,6 +712,10 @@ class JsonSchemaGenerator
         setFormat(node, "int64")
       }
 
+      if (_type != null) {
+        config.schemaExtension.modifyProperty(node, _type.getRawClass, Optional.ofNullable(currentProperty.orNull))
+      }
+
       new JsonIntegerFormatVisitor with EnumSupport {
         val _node = node
         override def numberType(_type: NumberType): Unit = l(s"JsonIntegerFormatVisitor.numberType: ${_type}")
@@ -732,6 +744,10 @@ class JsonSchemaGenerator
             defaultValue =>
               node.put("default", defaultValue.value().toBoolean)
           }
+      }
+
+      if (_type != null) {
+        config.schemaExtension.modifyProperty(node, _type.getRawClass, Optional.ofNullable(currentProperty.orNull))
       }
 
       new JsonBooleanFormatVisitor with EnumSupport {
@@ -769,6 +785,9 @@ class JsonSchemaGenerator
       objectMapper.acceptJsonFormatVisitor(tryToReMapType(_type.getContentType), childVisitor)
       definitionsHandler.popworkInProgress()
 
+      if (_type != null) {
+        config.schemaExtension.modifyProperty(node, _type.getRawClass, Optional.ofNullable(currentProperty.orNull))
+      }
 
       new JsonMapFormatVisitor with MySerializerProvider {
         override def keyFormat(handler: JsonFormatVisitable, keyType: JavaType): Unit = {
@@ -1038,6 +1057,10 @@ class JsonSchemaGenerator
                   thisObjectNode.set("options", objectOptionsNode)
                 }
 
+            }
+
+            if (_type != null) {
+              config.schemaExtension.modifyProperty(node, _type.getRawClass, Optional.ofNullable(currentProperty.orNull))
             }
 
             Some(new JsonObjectFormatVisitor with MySerializerProvider {
