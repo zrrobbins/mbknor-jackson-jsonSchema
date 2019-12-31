@@ -306,7 +306,7 @@ class JsonSchemaGenerator
   // Whether or not to persist seen models between calls to `generateJsonSchema`. Currently, this is default true when object is constructed from Java, false from scala.
   // This is totally not a good way to do things, but it means I don't need to update HSMP to be backwards compatible with a constructor change here, nor fix a ton of
   // failing tests. If we ever decide to contribute back to open source, we will need to add the Java API option.
-  var globalRefTracker: Map[Class[_], String] = Map[Class[_], String]()
+  var globalRefTracker: Map[JavaType, String] = Map[JavaType, String]()
 
   val dateFormatMapping = Map[String,String](
     // Java7 dates
@@ -349,8 +349,8 @@ class JsonSchemaGenerator
   case class DefinitionInfo(ref:Option[String], jsonObjectFormatVisitor: Option[JsonObjectFormatVisitor])
 
   // Class that manages creating new definitions or getting $refs to existing definitions
-  class DefinitionsHandler(refTracker:Option[Map[Class[_], String]]) {
-    private var class2Ref = if (refTracker.isDefined) refTracker.get else Map[Class[_], String]()
+  class DefinitionsHandler(refTracker:Option[Map[JavaType, String]]) {
+    private var class2Ref = if (refTracker.isDefined) refTracker.get else Map[JavaType, String]()
     private var modelsCreated = false
     private val definitionsNode = JsonNodeFactory.instance.objectNode()
 
@@ -373,10 +373,19 @@ class JsonSchemaGenerator
     }
 
 
-    def getDefinitionName (clazz:Class[_]) = { if (config.useTypeIdForDefinitionName) clazz.getName else clazz.getSimpleName }
+    def getTypeName (t:JavaType) = { if (config.useTypeIdForDefinitionName) t.getRawClass.getName else t.getRawClass.getSimpleName }
+
+    def getDefinitionName (t:JavaType):String = {
+      var definitionName = getTypeName(t)
+
+      t.getBindings.getTypeParameters.asScala
+        .foreach(definitionName += getDefinitionName(_))
+
+      definitionName
+    }
 
     // Either creates new definitions or return $ref to existing one
-    def getOrCreateDefinition(clazz:Class[_])(objectDefinitionBuilder:(ObjectNode) => Option[JsonObjectFormatVisitor]):DefinitionInfo = {
+    def getOrCreateDefinition(clazz:JavaType)(objectDefinitionBuilder:(ObjectNode) => Option[JsonObjectFormatVisitor]):DefinitionInfo = {
 
       class2Ref.get(clazz) match {
         case Some(ref) =>
@@ -387,7 +396,7 @@ class JsonSchemaGenerator
 
             case Some(w) =>
               // this is a recursive polymorphism call
-              if ( clazz != w.classInProgress) throw new Exception(s"Wrong class - working on ${w.classInProgress} - got $clazz")
+              if ( clazz.getRawClass != w.classInProgress) throw new Exception(s"Wrong class - working on ${w.classInProgress} - got $clazz")
 
               DefinitionInfo(None, objectDefinitionBuilder(w.nodeInProgress))
           }
@@ -400,8 +409,8 @@ class JsonSchemaGenerator
           var longRef = "#/definitions/" + shortRef
           while( class2Ref.values.toList.contains(longRef)) {
             retryCount = retryCount + 1
-            shortRef = clazz.getSimpleName + "_" + retryCount
-            longRef = "#/definitions/"+clazz.getSimpleName + "_" + retryCount
+            shortRef = getDefinitionName(clazz) + "_" + retryCount
+            longRef = "#/definitions/"+getDefinitionName(clazz) + "_" + retryCount
           }
           class2Ref = class2Ref + (clazz -> longRef)
           modelsCreated = true
@@ -410,13 +419,13 @@ class JsonSchemaGenerator
           val node = JsonNodeFactory.instance.objectNode()
 
           // When processing polymorphism, we might get multiple recursive calls to getOrCreateDefinition - this is a wau to combine them
-          workInProgress = Some(WorkInProgress(clazz, node))
+          workInProgress = Some(WorkInProgress(clazz.getRawClass, node))
 
           definitionsNode.set(shortRef, node)
 
           val jsonObjectFormatVisitor = objectDefinitionBuilder.apply(node)
 
-          config.schemaExtension.modifyModel(node, clazz)
+          config.schemaExtension.modifyModel(node, clazz.getRawClass)
 
           workInProgress = None
 
@@ -428,7 +437,7 @@ class JsonSchemaGenerator
       if (!modelsCreated) None else Some(definitionsNode)
     }
 
-    def getFinalClass2Ref():Map[Class[_], String] = {
+    def getFinalClass2Ref():Map[JavaType, String] = {
       class2Ref
     }
   }
@@ -584,7 +593,9 @@ class JsonSchemaGenerator
       new JsonArrayFormatVisitor with MySerializerProvider {
         override def itemsFormat(handler: JsonFormatVisitable, _elementType: JavaType): Unit = {
           l(s"expectArrayFormat - handler: $handler - elementType: ${_elementType} - preferredElementType: $preferredElementType")
-          objectMapper.acceptJsonFormatVisitor(tryToReMapType(preferredElementType), createChild(itemsNode, currentProperty = None))
+          // Some types have a preferredElementType of null, but a valid type hint passed in. In these cases, we fall back to the type hint.
+          val typeToUse:JavaType = Option.apply(preferredElementType).getOrElse(_elementType)
+          objectMapper.acceptJsonFormatVisitor(tryToReMapType(typeToUse), createChild(itemsNode, currentProperty = None))
         }
 
         override def itemsFormat(format: JsonFormatTypes): Unit = {
@@ -831,6 +842,9 @@ class JsonSchemaGenerator
     }
 
     def tryToReMapType(originalClass: Class[_]):Class[_] = {
+      if (originalClass == null) {
+        return originalClass
+      }
       config.classTypeReMapping.get(originalClass).map {
         mappedToClass:Class[_] =>
           l(s"Class $originalClass is remapped to $mappedToClass")
@@ -839,6 +853,9 @@ class JsonSchemaGenerator
     }
 
     private def tryToReMapType(originalType: JavaType):JavaType = {
+      if (originalType == null) {
+        return originalType
+      }
       val _type:JavaType = config.classTypeReMapping.get(originalType.getRawClass).map {
         mappedToClass:Class[_] =>
           l(s"Class ${originalType.getRawClass} is remapped to $mappedToClass")
@@ -888,7 +905,7 @@ class JsonSchemaGenerator
           subType: Class[_] =>
             l(s"polymorphism - subType: $subType")
 
-            val definitionInfo: DefinitionInfo = definitionsHandler.getOrCreateDefinition(subType){
+            val definitionInfo: DefinitionInfo = definitionsHandler.getOrCreateDefinition(rootObjectMapper.constructType(subType)){
               objectNode =>
 
                 val childVisitor = createChild(objectNode, currentProperty = None)
@@ -1200,7 +1217,7 @@ class JsonSchemaGenerator
           // This is the first level - we must not use definitions
           objectBuilder(node).orNull
         } else {
-          val definitionInfo: DefinitionInfo = definitionsHandler.getOrCreateDefinition(_type.getRawClass)(objectBuilder)
+          val definitionInfo: DefinitionInfo = definitionsHandler.getOrCreateDefinition(_type)(objectBuilder)
 
           definitionInfo.ref.foreach {
             r =>
@@ -1396,12 +1413,12 @@ class JsonSchemaGenerator
 
   def clearSavedDefinitions(): Unit = {
     // Clear saved definitions
-    globalRefTracker = Map[Class[_], String]()
+    globalRefTracker = Map[JavaType, String]()
   }
 
   // Another janky workaround for HSMP. The JsonSchemaGenerator recursively resolves all submodels and returns a nested JsonNode. However, this loses all the class/type
   // information. We need to know the Java type of all models encountered here in the HSMP, thus have this method to do so.
-  def getSavedDefinitions: util.Map[Class[_], String] = {
+  def getSavedDefinitions: util.Map[JavaType, String] = {
     globalRefTracker.asJava
   }
 
