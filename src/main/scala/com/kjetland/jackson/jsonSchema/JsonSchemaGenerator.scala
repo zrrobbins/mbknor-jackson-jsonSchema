@@ -311,7 +311,7 @@ class JsonSchemaGenerator
   // failing tests. If we ever decide to contribute back to open source, we will need to add the Java API option.
   var globalRefTracker: Map[JavaType, String] = Map[JavaType, String]()
 
-  // Same as property above, but tracks all found models. This way, if we've seen a model before, we don't need to regenerate it, but can still include
+  // Similar to property above, but tracks all found models. This way, if we've seen a model before, we don't need to regenerate it, but can still include
   // it the "definitions" section of a model that has a ref to it.
   var globalDefinitionsTracker: Map[String, JsonNode] = Map[String, JsonNode]()
 
