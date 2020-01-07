@@ -118,7 +118,8 @@ object JsonSchemaConfig {
               uniqueItemClasses:java.util.Set[Class[_]],
               classTypeReMapping:java.util.Map[Class[_], Class[_]],
               jsonSuppliers:java.util.Map[String, Supplier[JsonNode]],
-              persistModels:Boolean
+              persistModels:Boolean,
+              alwaysReturnDefinitions:Boolean
             ):JsonSchemaConfig = {
 
     import scala.collection.JavaConverters._
@@ -138,7 +139,8 @@ object JsonSchemaConfig {
       uniqueItemClasses.asScala.toSet,
       classTypeReMapping.asScala.toMap,
       jsonSuppliers.asScala.toMap,
-      persistModels
+      persistModels,
+      alwaysReturnDefinitions
     )
   }
 
@@ -260,6 +262,7 @@ case class JsonSchemaConfig
   classTypeReMapping:Map[Class[_], Class[_]], // Can be used to prevent rendering using polymorphism for specific classes.
   jsonSuppliers:Map[String, Supplier[JsonNode]], // Suppliers in this map can be accessed using @JsonSchemaInject(jsonSupplierViaLookup = "lookupKey")
   persistModels:Boolean = false, // Whether or not to persist seen models between calls to `generateJsonSchema`
+  alwaysReturnDefinitions:Boolean = false, // If true, will always return corresponding "definitions" if any model properties are ref properties
   subclassesResolver:SubclassesResolver = new SubclassesResolverImpl(), // Using default impl that scans entire classpath
   schemaExtension:SchemaExtension = new DefaultSchemaExtension(), // Optionally can be included for arbitrary manipulation of generated schemas, off by default
   failOnUnknownProperties:Boolean = true // Must match with the corresponding ObjectMapper setting!
@@ -308,6 +311,10 @@ class JsonSchemaGenerator
   // failing tests. If we ever decide to contribute back to open source, we will need to add the Java API option.
   var globalRefTracker: Map[JavaType, String] = Map[JavaType, String]()
 
+  // Similar to property above, but tracks all found models. This way, if we've seen a model before, we don't need to regenerate it, but can still include
+  // it the "definitions" section of a model that has a ref to it.
+  var globalDefinitionsTracker: Map[String, JsonNode] = Map[String, JsonNode]()
+
   val dateFormatMapping = Map[String,String](
     // Java7 dates
     "java.time.LocalDateTime" -> "datetime-local",
@@ -351,7 +358,6 @@ class JsonSchemaGenerator
   // Class that manages creating new definitions or getting $refs to existing definitions
   class DefinitionsHandler(refTracker:Option[Map[JavaType, String]]) {
     private var class2Ref = if (refTracker.isDefined) refTracker.get else Map[JavaType, String]()
-    private var modelsCreated = false
     private val definitionsNode = JsonNodeFactory.instance.objectNode()
 
 
@@ -392,12 +398,18 @@ class JsonSchemaGenerator
 
           workInProgress match {
             case None =>
+              val shortRef = getDefinitionName(clazz)
+              if (config.alwaysReturnDefinitions) {
+                globalDefinitionsTracker.get(shortRef)
+                  .map(definition => definitionsNode.set(shortRef, definition))
+              }
               DefinitionInfo(Some(ref), None)
 
             case Some(w) =>
               // this is a recursive polymorphism call
               if ( clazz.getRawClass != w.classInProgress) throw new Exception(s"Wrong class - working on ${w.classInProgress} - got $clazz")
 
+              definitionsNode.set(ref, w.nodeInProgress)
               DefinitionInfo(None, objectDefinitionBuilder(w.nodeInProgress))
           }
 
@@ -413,12 +425,14 @@ class JsonSchemaGenerator
             longRef = "#/definitions/"+getDefinitionName(clazz) + "_" + retryCount
           }
           class2Ref = class2Ref + (clazz -> longRef)
-          modelsCreated = true
 
           // create definition
           val node = JsonNodeFactory.instance.objectNode()
+          if (config.alwaysReturnDefinitions) {
+            globalDefinitionsTracker = globalDefinitionsTracker + (shortRef -> node)
+          }
 
-          // When processing polymorphism, we might get multiple recursive calls to getOrCreateDefinition - this is a wau to combine them
+          // When processing polymorphism, we might get multiple recursive calls to getOrCreateDefinition - this is a way to combine them
           workInProgress = Some(WorkInProgress(clazz.getRawClass, node))
 
           definitionsNode.set(shortRef, node)
@@ -434,7 +448,7 @@ class JsonSchemaGenerator
     }
 
     def getFinalDefinitionsNode():Option[ObjectNode] = {
-      if (!modelsCreated) None else Some(definitionsNode)
+      if (!definitionsNode.fields().hasNext) None else Some(definitionsNode)
     }
 
     def getFinalClass2Ref():Map[JavaType, String] = {
@@ -1414,6 +1428,7 @@ class JsonSchemaGenerator
   def clearSavedDefinitions(): Unit = {
     // Clear saved definitions
     globalRefTracker = Map[JavaType, String]()
+    globalDefinitionsTracker = Map[String, JsonNode]()
   }
 
   // Another janky workaround for HSMP. The JsonSchemaGenerator recursively resolves all submodels and returns a nested JsonNode. However, this loses all the class/type
