@@ -9,14 +9,14 @@ lazy val commonSettings = Seq(
   publishArtifact in Test := false,
   pomIncludeRepository := { _ => false },
   useGpg := true,
-  publishTo := Some(Resolver.file("file",  new File(Path.userHome.absolutePath+"/.m2/repository"))), // For local testing
-  // publishTo := {
-  //   val nexus = "https://oss.sonatype.org/"
-  //   if (isSnapshot.value)
-  //     Some("snapshots" at nexus + "content/repositories/snapshots")
-  //   else
-  //     Some("releases" at nexus + "service/local/staging/deploy/maven2")
-  // },
+  //publishTo := Some(Resolver.file("file",  new File(Path.userHome.absolutePath+"/.m2/repository"))), // For local testing
+  publishTo := {
+    val nexus = "https://oss.sonatype.org/"
+    if (isSnapshot.value)
+      Some("snapshots" at nexus + "content/repositories/snapshots")
+    else
+      Some("releases" at nexus + "service/local/staging/deploy/maven2")
+  },
   credentials += Credentials(Path.userHome / ".ivy2" / ".credentials_sonatype"),
   homepage := Some(url("https://github.com/zrrobbins/mbknor-jackson-jsonSchema")),
   licenses := Seq("MIT" -> url("https://github.com/zrrobbins/mbknor-jackson-jsonSchema/blob/master/LICENSE.txt")),
