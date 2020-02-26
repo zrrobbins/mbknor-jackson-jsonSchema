@@ -1225,6 +1225,9 @@ class JsonSchemaGenerator
                   a =>
                     injectFromJsonSchemaInject(a, thisPropertyNode.meta)
                 }
+
+                // This is only passing in the meta portion of the property node to be modified!
+                config.schemaExtension.modifyProperty(thisPropertyNode.meta, _type.getRawClass, Optional.ofNullable(prop.orNull))
               }
 
               override def optionalProperty(prop: BeanProperty): Unit = {
